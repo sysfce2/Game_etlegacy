@@ -1,5 +1,6 @@
 package org.etlegacy.app;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Color;
@@ -351,7 +352,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
             Log.v("ETL", "AndroidTV / ChromeBook Detected, Display UI Disabled!");
         } else {
             runOnUiThread(new Runnable() {
-                @Override
+                @SuppressLint("ResourceType")
+				@Override
                 public void run() {
                     final ImageButton etl_console = new ImageButton(getApplicationContext());
                     etl_console.setImageResource(R.drawable.ic_one_line);
@@ -415,7 +417,99 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 
     }
 
-    @Override
+	@Override
+	public boolean onTouchEvent(MotionEvent event) {
+
+		int action = event.getAction();
+		float p;
+		int touchDevId = event.getDeviceId();
+		int actionCode = action & MotionEvent.ACTION_MASK;
+		int etl_width = Resources.getSystem().getDisplayMetrics().widthPixels;
+		int etl_height = Resources.getSystem().getDisplayMetrics().heightPixels;
+
+		if (actionCode == MotionEvent.ACTION_MOVE)
+		{
+
+			for (int i = 0; i < event.getPointerCount(); i++) {
+
+				float x = event.getX(i)/etl_width;
+				float y = event.getY(i)/etl_height;
+				int pid = event.getPointerId(i);
+				p = event.getPressure(i);
+				if (p > 1.0f) {
+					// may be larger than 1.0f on some devices
+					// see the documentation of getPressure(i)
+					p = 1.0f;
+				}
+				onNativeTouch(touchDevId, pid, event.getActionMasked(), x ,y, p);
+			}
+		}
+		else if (actionCode == MotionEvent.ACTION_DOWN)
+		{
+			float x = event.getX()/etl_width;
+			float y = event.getY()/etl_width;
+			p = event.getPressure(0);
+			if (p > 1.0f) {
+				// may be larger than 1.0f on some devices
+				// see the documentation of getPressure(i)
+				p = 1.0f;
+			}
+			onNativeTouch(touchDevId, 0, event.getActionMasked(), x ,y, p);
+		}
+		else if (actionCode == MotionEvent.ACTION_POINTER_DOWN)
+		{
+			int index = event.getActionIndex();
+			if (index != -1)
+			{
+				float x = event.getX(index)/etl_width;
+				float y = event.getY(index)/etl_height;
+				int pid = event.getPointerId(index);
+				p = event.getPressure(index);
+				if (p > 1.0f) {
+					// may be larger than 1.0f on some devices
+					// see the documentation of getPressure(i)
+					p = 1.0f;
+				}
+				onNativeTouch(touchDevId, pid, event.getActionMasked(), x ,y, p);
+			}
+		}
+		else if (actionCode == MotionEvent.ACTION_POINTER_UP)
+		{
+			int index = event.getActionIndex();
+			if (index != -1)
+			{
+
+				float x = event.getX(index)/etl_width;
+				float y = event.getY(index)/etl_height;
+				int pid = event.getPointerId(index);
+				p = event.getPressure(index);
+				if (p > 1.0f) {
+					// may be larger than 1.0f on some devices
+					// see the documentation of getPressure(i)
+					p = 1.0f;
+				}
+				onNativeTouch(touchDevId, pid, event.getActionMasked(), x ,y, p);
+			}
+		}
+		else if (actionCode == MotionEvent.ACTION_UP)
+		{
+			float x = event.getX()/etl_width;
+			float y = event.getY()/etl_height;
+			int index = event.getActionIndex();
+			int pid = event.getPointerId(index);
+			p = event.getPressure(index);
+			if (p > 1.0f) {
+				// may be larger than 1.0f on some devices
+				// see the documentation of getPressure(i)
+				p = 1.0f;
+			}
+			onNativeTouch(touchDevId, pid, event.getActionMasked(), x ,y, p);
+		}
+
+		return true;
+	}
+
+	@Override
     public void onMove(JoyStick joyStick, double angle, double power, int direction) {
 
         if (isAndroidTV() || isChromebook()) {
