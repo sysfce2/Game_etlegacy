@@ -1543,7 +1543,7 @@ void IN_Init(void)
 	// SDL_SetHint(SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1");
 	// This has been removed and replaced with those bellow in SDL 2.0.10
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
-	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
+	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
 
