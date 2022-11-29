@@ -1383,24 +1383,25 @@ static void IN_ProcessEvents(void)
 			}
 			break;
 #ifdef __ANDROID__
-        // Figure it out if it is needed here at all
+		case SDL_FINGERDOWN:
+            SDL_WarpMouseInWindow(mainScreen, e.tfinger.x, e.tfinger.y);
+			Com_QueueEvent(lasttime, SE_KEY, K_MOUSE1, (e.type == SDL_MOUSEBUTTONDOWN ? qtrue : qfalse), 0, NULL);
+            break;
+        case SDL_FINGERUP:
+			e.tfinger.x = e.tfinger.dx;
+			e.tfinger.y = e.tfinger.dy;
+			SDL_WarpMouseInWindow(mainScreen, e.tfinger.x, e.tfinger.y);
+            break;
         case SDL_FINGERMOTION:
-            /*
-            if (mouseActive)
+			/*if (mouseActive)
             {
                 if (!e.motion.xrel && !e.motion.yrel)
                 {
                     break;
                 }
                 Com_QueueEvent(lasttime, SE_MOUSE, e.motion.xrel, e.motion.yrel, 0, NULL);
-            }
-            SDL_SendTouchMotion(touchDeviceId, fingerId, window, x, y, p);
-            */
-            break;
-        case SDL_FINGERDOWN:
-            SDL_WarpMouseInWindow(mainScreen, cls.glconfig.windowWidth / 2, cls.glconfig.windowHeight / 2);
-            break;
-        case SDL_FINGERUP:
+            }*/
+			Com_QueueEvent(lasttime, SE_MOUSE, e.tfinger.dx, e.tfinger.dy, 0, NULL);
             break;
 #endif
         default:
