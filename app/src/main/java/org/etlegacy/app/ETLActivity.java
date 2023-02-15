@@ -387,7 +387,7 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 	public boolean onTouchEvent(MotionEvent event) {
 
 		int action = event.getAction();
-		float p;
+		float x, y, p;
 		int touchDevId = event.getDeviceId();
 		int actionCode = action & MotionEvent.ACTION_MASK;
 		int etl_width = Resources.getSystem().getDisplayMetrics().widthPixels;
@@ -398,8 +398,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 
 			for (int i = 0; i < event.getPointerCount(); i++) {
 
-				float x = event.getX(i)/etl_width;
-				float y = event.getY(i)/etl_height;
+				x = event.getX(i)/etl_width;
+				y = event.getY(i)/etl_height;
 				int pid = event.getPointerId(i);
 				p = event.getPressure(i);
 				if (p > 1.0f) {
@@ -412,8 +412,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 		}
 		else if (actionCode == MotionEvent.ACTION_DOWN)
 		{
-			float x = event.getX()/etl_width;
-			float y = event.getY()/etl_width;
+			x = event.getX()/etl_width;
+			y = event.getY()/etl_height;
 			p = event.getPressure(0);
 			if (p > 1.0f) {
 				// may be larger than 1.0f on some devices
@@ -427,8 +427,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 			int index = event.getActionIndex();
 			if (index != -1)
 			{
-				float x = event.getX(index)/etl_width;
-				float y = event.getY(index)/etl_height;
+				x = event.getX(index)/etl_width;
+				y = event.getY(index)/etl_height;
 				int pid = event.getPointerId(index);
 				p = event.getPressure(index);
 				if (p > 1.0f) {
@@ -445,8 +445,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 			if (index != -1)
 			{
 
-				float x = event.getX(index)/etl_width;
-				float y = event.getY(index)/etl_height;
+				x = event.getX(index)/etl_width;
+				y = event.getY(index)/etl_height;
 				int pid = event.getPointerId(index);
 				p = event.getPressure(index);
 				if (p > 1.0f) {
@@ -459,8 +459,8 @@ public class ETLActivity extends SDLActivity implements JoyStickListener {
 		}
 		else if (actionCode == MotionEvent.ACTION_UP)
 		{
-			float x = event.getX()/etl_width;
-			float y = event.getY()/etl_height;
+			x = event.getX()/etl_width;
+			y = event.getY()/etl_height;
 			int index = event.getActionIndex();
 			int pid = event.getPointerId(index);
 			p = event.getPressure(index);
