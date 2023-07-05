@@ -58,6 +58,8 @@ static cvar_t       *in_joystickUseAnalog = NULL;
 static int vidRestartTime = 0;
 SDL_Window *mainScreen    = NULL;
 
+clientJavainterface_t cjv;
+
 // Used for giving the engine better (= unlagged) input timestamps
 // We give the engine the time we last polled inputs as the timestamp to the current inputs.
 // As long as the input backend doesn't have reliable timestamps, this is the right thing to do!
@@ -1151,6 +1153,33 @@ static void IN_WindowFocusLost()
 }
 
 /**
+ * @brief IN_JNIProcess
+ */
+static void IN_JNIProcess(void)
+{
+    cjv.env = (JNIEnv *) SDL_AndroidGetJNIEnv();
+
+    if (cjv.env == NULL)
+    {
+        return;
+    }
+
+    cjv.activity = (jobject)SDL_AndroidGetActivity();
+
+    if (cjv.activity == NULL)
+    {
+        return;
+    }
+
+    cjv.clazz = (*cjv.env)->GetObjectClass(cjv.env, cjv.activity);
+
+    if (cjv.clazz == NULL)
+    {
+        return;
+    }
+}
+
+/**
  * @brief IN_ProcessEvents
  */
 static void IN_ProcessEvents(void)
@@ -1384,10 +1413,21 @@ static void IN_ProcessEvents(void)
 			break;
 #ifdef __ANDROID__
 		case SDL_FINGERDOWN:
-            SDL_WarpMouseInWindow(mainScreen, e.tfinger.x * cls.glconfig.windowWidth, e.tfinger.y * cls.glconfig.windowHeight);
+            SDL_WarpMouseInWindow(mainScreen, e.tfinger.x, e.tfinger.y);
+            IN_JNIProcess();
+
+            //cjv.m_id      = (*cjv.env)->GetMethodID(cjv.env, cjv.clazz, "runUI", "Lorg/etlegacy/app/ETLActivity");
+            cjv.m_id      = (*cjv.env)->GetMethodID(cjv.env, cjv.clazz, "runUI", "()Lorg/etlegacy/app/ETLActivity$onPostCreate");
+
+            if(cjv.m_id != -1)
+            {
+                Com_QueueEvent(lasttime, SE_KEY, K_MOUSE1, qtrue, 0, NULL);
+            }
+            (*cjv.env)->DeleteLocalRef(cjv.env, cjv.clazz);
+            (*cjv.env)->DeleteLocalRef(cjv.env, cjv.activity);
             break;
         case SDL_FINGERUP:
-			Com_QueueEvent(lasttime, SE_KEY, K_MOUSE1, qtrue, 0, NULL);
+			Com_QueueEvent(lasttime, SE_KEY, K_MOUSE1, qfalse, 0, NULL);
             break;
         case SDL_FINGERMOTION:
 			Com_QueueEvent(lasttime, SE_MOUSE, e.tfinger.dx * cls.glconfig.windowWidth, e.tfinger.dy * cls.glconfig.windowHeight, 0, NULL);
@@ -1413,29 +1453,9 @@ void IN_Frame(void)
 
 #ifdef __ANDROID__
 
-	clientJavainterface_t cjv;
-	cjv.env = (JNIEnv *) SDL_AndroidGetJNIEnv();
+    IN_JNIProcess();
 
-	if (cjv.env == NULL)
-	{
-		return;
-	}
-
-	cjv.activity = (jobject)SDL_AndroidGetActivity();
-
-	if (cjv.activity == NULL)
-	{
-		return;
-	}
-
-	cjv.clazz = (*cjv.env)->GetObjectClass(cjv.env, cjv.activity);
-
-	if (cjv.clazz == NULL)
-	{
-		return;
-	}
-
-	cjv.f_id      = (*cjv.env)->GetStaticFieldID(cjv.env, cjv.clazz, "UiMenu", "Z");
+    cjv.f_id      = (*cjv.env)->GetStaticFieldID(cjv.env, cjv.clazz, "UiMenu", "Z");
 	cjv.f_boolean = (*cjv.env)->GetStaticBooleanField(cjv.env, cjv.clazz, cjv.f_id);
 
 	if (cls.state == CA_ACTIVE)
