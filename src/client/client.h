@@ -285,6 +285,7 @@ typedef struct
 
 	jobject activity;                           ///< Activity object
 	jclass clazz;                               ///< Object Class
+    jmethodID m_id;                             ///< Method field
 	jfieldID f_id;                              ///< Variable field
 
 	qboolean f_boolean;                         ///< In this case variable is boolean type and we change value of it
