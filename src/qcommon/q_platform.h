@@ -396,14 +396,12 @@
 #error "DLL_EXT not defined"
 #endif
 
-
 // x86 platform?
 #if defined(_M_IX86) || defined(__i386__)
 #define ARCH_X86 1
 #else
 #define ARCH_X86 0
 #endif
-
 
 //endianness
 short ShortSwap(short l);

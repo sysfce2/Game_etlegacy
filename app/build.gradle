@@ -22,7 +22,7 @@ def getVersionLong() {
 	return out.toString().replace('\n','')
 }
 
-def getVersionShort() {
+static def getVersionShort() {
 	// use the CI provided version if available
 	if (System.getenv('CI_ETL_TAG') != null) {
 		def tagString = System.getenv('CI_ETL_TAG')
@@ -40,14 +40,14 @@ def getVersionShort() {
 
 android {
 	namespace "com.etlegacy.app"
-	compileSdk 33
+	compileSdk 35
 	defaultConfig {
 		if (buildAsApplication) {
 			applicationId "com.etlegacy.app"
 		}
 		minSdkVersion 26
-		//noinspection OldTargetApi
-		targetSdk 33
+		//noinspection EditedTargetSdkVersion
+		targetSdk 35
 		versionCode 1
 		versionName getVersionShort()
 		base {
@@ -155,11 +155,10 @@ android {
 }
 
 dependencies {
-	// FIXME: replace with our own version
-	api 'com.github.erz05:JoyStick:1.1.0'
+	api 'com.etlegacy.android:joystick:+'
 	// api 'com.etlegacy.android:joystick:1.1.1-SNAPSHOT'
-	implementation 'com.google.guava:guava:33.1.0-android'
-	implementation 'androidx.appcompat:appcompat:1.6.1'
+	implementation 'androidx.appcompat:appcompat:1.7.0'
+	implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
 
 	testImplementation 'junit:junit:4.13.2'
 	androidTestImplementation 'com.jayway.android.robotium:robotium-solo:5.6.0'

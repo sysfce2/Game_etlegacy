@@ -228,6 +228,26 @@ void CG_BloodTrail(localEntity_t *le)
 	}
 }
 
+void CG_ProjectBloodDecal(vec3_t *points, float radius)
+{
+	// vec4_t projection, color;
+	vec4_t projection;
+	//CG_ImpactMark( cgs.media.bloodDotShaders[rand()%5], trace->endpos, trace->plane.normal, random()*360,
+	//  1,1,1,1, qtrue, radius, qfalse, cg_bloodTime.integer * 1000 );
+#if 0
+	VectorSubtract(vec3_origin, trace->plane.normal, projection);
+	projection[3] = radius * 2.0f;
+	VectorMA(trace->endpos, -8.0f, projection, markOrigin);
+	CG_ImpactMark(cgs.media.bloodDotShaders[rand() % 5], markOrigin, projection, radius, random() * 360.0f, 1.0f, 1.0f, 1.0f, 1.0f, cg_bloodTime.integer * 1000);
+#else
+	VectorSet(projection, 0, 0, -1);
+	projection[3] = radius;
+	// Vector4Set(color, 1.0f, 1.0f, 1.0f, 1.0f);
+	trap_R_ProjectDecal(cgs.media.bloodDotShaders[rand() % 5], 1, points, projection, colorWhite,
+	                    cg_bloodTime.integer * 1000, (cg_bloodTime.integer * 1000) >> 4);
+#endif
+}
+
 /**
  * @brief CG_FragmentBounceMark
  * @param[in,out] le
@@ -242,22 +262,7 @@ void CG_FragmentBounceMark(localEntity_t *le, trace_t *trace)
 		// don't drop too many blood marks
 		if (!(lastBloodMark > cg.time || lastBloodMark > cg.time - 100))
 		{
-			vec4_t projection, color;
-			int    radius = 16 + (rand() & 31);
-			//CG_ImpactMark( cgs.media.bloodDotShaders[rand()%5], trace->endpos, trace->plane.normal, random()*360,
-			//  1,1,1,1, qtrue, radius, qfalse, cg_bloodTime.integer * 1000 );
-#if 0
-			VectorSubtract(vec3_origin, trace->plane.normal, projection);
-			projection[3] = radius * 2.0f;
-			VectorMA(trace->endpos, -8.0f, projection, markOrigin);
-			CG_ImpactMark(cgs.media.bloodDotShaders[rand() % 5], markOrigin, projection, radius, random() * 360.0f, 1.0f, 1.0f, 1.0f, 1.0f, cg_bloodTime.integer * 1000);
-#else
-			VectorSet(projection, 0, 0, -1);
-			projection[3] = radius;
-			Vector4Set(color, 1.0f, 1.0f, 1.0f, 1.0f);
-			trap_R_ProjectDecal(cgs.media.bloodDotShaders[rand() % 5], 1, (vec3_t *) trace->endpos, projection, color,
-			                    cg_bloodTime.integer * 1000, (cg_bloodTime.integer * 1000) >> 4);
-#endif
+			CG_ProjectBloodDecal((vec3_t *) trace->endpos, 16 + (rand() & 31));
 			lastBloodMark = cg.time;
 		}
 	}
@@ -1142,8 +1147,9 @@ void CG_AddConstRGB(localEntity_t *le)
 /**
  * @brief CG_AddMoveScaleFade
  * @param[in] le
+ * @param[in] master - if local entities are allowed to be mutated (e.g. freed)
  */
-static void CG_AddMoveScaleFade(localEntity_t *le)
+static void CG_AddMoveScaleFade(localEntity_t *le, qboolean master)
 {
 	refEntity_t *re = &le->refEntity;
 	float       c;
@@ -1175,13 +1181,15 @@ static void CG_AddMoveScaleFade(localEntity_t *le)
 
 	BG_EvaluateTrajectory(&le->pos, cg.time, re->origin, qfalse, -1);
 
-	// if the view would be "inside" the sprite, kill the sprite
-	// so it doesn't add too much overdraw
-	len = VectorDistance(re->origin, cg.refdef_current->vieworg);
-	if (len < le->radius)
-	{
-		CG_FreeLocalEntity(le);
-		return;
+	if (master) {
+		// if the view would be "inside" the sprite, kill the sprite
+		// so it doesn't add too much overdraw
+		len = VectorDistance(re->origin, cg.refdef_current->vieworg);
+		if (len < le->radius)
+		{
+			CG_FreeLocalEntity(le);
+			return;
+		}
 	}
 
 	trap_R_AddRefEntityToScene(re);
@@ -1193,8 +1201,9 @@ static void CG_AddMoveScaleFade(localEntity_t *le)
  * removed if the view passes through them.
  * There are often many of these, so it needs to be simple.
  * @param[in] le
+ * @param[in] master - if local entities are allowed to be mutated (e.g. freed)
  */
-static void CG_AddScaleFade(localEntity_t *le)
+static void CG_AddScaleFade(localEntity_t *le, qboolean master)
 {
 	refEntity_t *re = &le->refEntity;
 	float       c   = (le->endTime - cg.time) * le->lifeRate; // fade / grow time
@@ -1206,13 +1215,15 @@ static void CG_AddScaleFade(localEntity_t *le)
 		re->radius = le->radius * (1.0f - c) + 8;
 	}
 
-	// if the view would be "inside" the sprite, kill the sprite
-	// so it doesn't add too much overdraw
-	len = VectorDistance(re->origin, cg.refdef_current->vieworg);
-	if (len < le->radius)
-	{
-		CG_FreeLocalEntity(le);
-		return;
+	if (master) {
+		// if the view would be "inside" the sprite, kill the sprite
+		// so it doesn't add too much overdraw
+		len = VectorDistance(re->origin, cg.refdef_current->vieworg);
+		if (len < le->radius)
+		{
+			CG_FreeLocalEntity(le);
+			return;
+		}
 	}
 
 	trap_R_AddRefEntityToScene(re);
@@ -1225,8 +1236,9 @@ static void CG_AddScaleFade(localEntity_t *le)
  * removed if the view passes through them.
  * There are often 100+ of these, so it needs to be simple.
  * @param[in] le
+ * @param[in] master - if local entities are allowed to be mutated (e.g. freed)
  */
-static void CG_AddFallScaleFade(localEntity_t *le)
+static void CG_AddFallScaleFade(localEntity_t *le, qboolean master)
 {
 	refEntity_t *re = &le->refEntity;
 	float       c   = (le->endTime - cg.time) * le->lifeRate; // fade time
@@ -1238,13 +1250,15 @@ static void CG_AddFallScaleFade(localEntity_t *le)
 
 	re->radius = le->radius * (1.0f - c) + 16;
 
-	// if the view would be "inside" the sprite, kill the sprite
-	// so it doesn't add too much overdraw
-	len = VectorDistance(re->origin, cg.refdef_current->vieworg);
-	if (len < le->radius)
-	{
-		CG_FreeLocalEntity(le);
-		return;
+	if (master) {
+		// if the view would be "inside" the sprite, kill the sprite
+		// so it doesn't add too much overdraw
+		len = VectorDistance(re->origin, cg.refdef_current->vieworg);
+		if (len < le->radius)
+		{
+			CG_FreeLocalEntity(le);
+			return;
+		}
 	}
 
 	trap_R_AddRefEntityToScene(re);
@@ -1337,8 +1351,9 @@ static void CG_AddSpriteExplosion(localEntity_t *le)
 
 /**
  * @brief CG_AddLocalEntities
+ * @param[in] master - if local entities are allowed to be mutated (e.g. freed)
  */
-void CG_AddLocalEntities(void)
+void CG_AddLocalEntities(qboolean master)
 {
 	localEntity_t *le, *next;
 
@@ -1407,7 +1422,7 @@ void CG_AddLocalEntities(void)
 			CG_AddFragment(le);
 			break;
 		case LE_MOVE_SCALE_FADE:        // water bubbles
-			CG_AddMoveScaleFade(le);
+			CG_AddMoveScaleFade(le, master);
 			break;
 		case LE_FADE_RGB:               // teleporters, railtrails
 			CG_AddFadeRGB(le);
@@ -1416,10 +1431,10 @@ void CG_AddLocalEntities(void)
 			CG_AddConstRGB(le);         // debug lines
 			break;
 		case LE_FALL_SCALE_FADE:        // gib blood trails
-			CG_AddFallScaleFade(le);
+			CG_AddFallScaleFade(le, master);
 			break;
 		case LE_SCALE_FADE:             // rocket trails
-			CG_AddScaleFade(le);
+			CG_AddScaleFade(le, master);
 			break;
 		case LE_EMITTER:
 			CG_AddEmitter(le);

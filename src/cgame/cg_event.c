@@ -199,6 +199,9 @@ static void CG_Obituary(entityState_t *ent)
 		CG_Error("CG_Obituary: target out of range\n");
 	}
 
+	// this happens alongside 'EV_STOPSTREAMINGSOUND', as it sometimes doesn't seem to get emitted
+	trap_S_StartSoundEx(NULL, target, CHAN_WEAPON, 0, SND_CUTOFF_ALL);  // kill weapon sound (could be reloading)
+
 	// no obituary message if changing teams
 	if (mod == MOD_SWITCHTEAM)
 	{
@@ -206,6 +209,8 @@ static void CG_Obituary(entityState_t *ent)
 	}
 
 	ci = &cgs.clientinfo[target];
+
+	ci->mod = mod;
 
 	if (attacker < 0 || attacker >= MAX_CLIENTS)
 	{
@@ -456,64 +461,68 @@ static void CG_ItemPickup(int itemNum)
 		// we just drop current weapon
 		if (!COM_BitCheck(cg.snap->ps.weapons, cg.weaponSelect))
 		{
-			cg.weaponSelect = WP_NONE;
+			cg.weaponSelect             = WP_NONE;
+			cg.weaponSelectDuringFiring = (cg.snap->ps.weaponstate == WEAPON_FIRING) ? cg.time : 0;
 		}
 
-		if (cg_autoswitch.integer && cg.predictedPlayerState.weaponstate != WEAPON_RELOADING)
+		if (!cg_autoswitch.integer || cg.predictedPlayerState.weaponstate == WEAPON_RELOADING)
 		{
-			//  0 - "Off"
-			//  1 - "Always Switch"
-			//  2 - "If New"
-			//  3 - "If Better"
-			//  4 - "New or Better"
+			return;
+		}
 
-			// don't ever autoswitch to secondary fire weapons
-			// Leave autoswitch to secondary kar/carbine as they use alt ammo and arent zoomed: Note, not that it would do this anyway as it isnt in a bank....
-			if (!(GetWeaponTableData(itemid)->type & WEAPON_TYPE_SCOPED) && itemid != WP_AMMO)
+		// don't ever autoswitch to secondary fire weapons
+		// Leave autoswitch to secondary kar/carbine as they use alt ammo and aren't zoomed: Note, not that it would do this anyway as it isn't in a bank....
+		if (GetWeaponTableData(itemid)->type & WEAPON_TYPE_SCOPED ||
+		    (GetWeaponTableData(cg.weaponSelect)->type & WEAPON_TYPE_RIFLENADE && GetWeaponTableData(itemid)->type & WEAPON_TYPE_RIFLE) ||
+		    itemid == WP_AMMO)
+		{
+			return;
+		}
+
+		//  0 - "Off"
+		//  1 - "Always Switch"
+		//  2 - "If New"
+		//  3 - "If Better"
+		//  4 - "New or Better"
+
+		// no weap currently selected or cg_autoswitch 1 - always just select the new one
+		if (!cg.weaponSelect || cg_autoswitch.integer == 1)
+		{
+			cg.weaponSelectTime         = cg.time;
+			cg.weaponSelect             = itemid;
+			cg.weaponSelectDuringFiring = (cg.predictedPlayerState.weaponstate == WEAPON_FIRING) ? cg.time : 0;
+		}
+		else
+		{
+			// 2 - switch to weap if it's not already in the player's inventory (Wolf default)
+			// 4 - both 2 and 3
+
+			// FIXME:   this works fine for predicted pickups (when you walk over the weapon), but not for
+			//          manual pickups (activate item)
+			if (cg_autoswitch.integer == 2 || cg_autoswitch.integer == 4)
 			{
-				// no weap currently selected, always just select the new one
-				if (!cg.weaponSelect)
+				if (!COM_BitCheck(cg.snap->ps.weapons, itemid))
 				{
-					cg.weaponSelectTime = cg.time;
-					cg.weaponSelect     = itemid;
+					cg.weaponSelectTime         = cg.time;
+					cg.weaponSelect             = itemid;
+					cg.weaponSelectDuringFiring = (cg.predictedPlayerState.weaponstate == WEAPON_FIRING) ? cg.time : 0;
 				}
-				// 1 - always switch to new weap
-				else if (cg_autoswitch.integer == 1)
-				{
-					cg.weaponSelectTime = cg.time;
-					cg.weaponSelect     = itemid;
-				}
-				else
-				{
-					// 2 - switch to weap if it's not already in the player's inventory (Wolf default)
-					// 4 - both 2 and 3
+			}
 
-					// FIXME:   this works fine for predicted pickups (when you walk over the weapon), but not for
-					//          manual pickups (activate item)
-					if (cg_autoswitch.integer == 2 || cg_autoswitch.integer == 4)
+			// 3 - switch to weap if it's in a bank greater than the current weap
+			// 4 - both 2 and 3
+			if (cg_autoswitch.integer == 3 || cg_autoswitch.integer == 4)
+			{
+				// switch away only if a primary weapon is selected (read: don't switch away if current weap is a secondary mode)
+				if (CG_WeaponIndex(cg.weaponSelect, &wpbank_cur, NULL))
+				{
+					if (CG_WeaponIndex(itemid, &wpbank_pickup, NULL))
 					{
-						if (!COM_BitCheck(cg.snap->ps.weapons, itemid))
+						if (wpbank_pickup > wpbank_cur)
 						{
-							cg.weaponSelectTime = cg.time;
-							cg.weaponSelect     = itemid;
-						}
-					}
-
-					// 3 - switch to weap if it's in a bank greater than the current weap
-					// 4 - both 2 and 3
-					if (cg_autoswitch.integer == 3 || cg_autoswitch.integer == 4)
-					{
-						// switch away only if a primary weapon is selected (read: don't switch away if current weap is a secondary mode)
-						if (CG_WeaponIndex(cg.weaponSelect, &wpbank_cur, NULL))
-						{
-							if (CG_WeaponIndex(itemid, &wpbank_pickup, NULL))
-							{
-								if (wpbank_pickup > wpbank_cur)
-								{
-									cg.weaponSelectTime = cg.time;
-									cg.weaponSelect     = itemid;
-								}
-							}
+							cg.weaponSelectTime         = cg.time;
+							cg.weaponSelect             = itemid;
+							cg.weaponSelectDuringFiring = (cg.predictedPlayerState.weaponstate == WEAPON_FIRING) ? cg.time : 0;
 						}
 					}
 				}
@@ -2015,7 +2024,7 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 
 	if (cg_debugEvents.integer)
 	{
-		CG_Printf("time:%i ent:%3i  event:%3i ", cg.time, es->number, event);
+		CG_Printf("CEV: RECV time:%7i ent:%15i event:%3i eventParm:%3i ", cg.time, es->number, event, es->eventParm);
 
 		if (event < EV_NONE || event >= EV_MAX_EVENTS)
 		{
@@ -2023,7 +2032,7 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 		}
 		else
 		{
-			CG_Printf("%s\n", eventnames[event]);
+			Com_Printf("%s C(%d)\n", eventnames[event], (es->clientNum < 0 || es->clientNum >= MAX_CLIENTS) ? -1 : es->clientNum);
 		}
 	}
 
@@ -2268,11 +2277,11 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 		// IS_VALID_WEAPON(es->weapon) ?
 		if (BG_IsSkillAvailable(cgs.clientinfo[clientNum].skill, SK_LIGHT_WEAPONS, SK_LIGHT_WEAPONS_FASTER_RELOAD) && (GetWeaponTableData(es->weapon)->attributes & WEAPON_ATTRIBUT_FAST_RELOAD) && cg_weapons[es->weapon].reloadFastSound)
 		{
-			trap_S_StartSound(NULL, es->number, CHAN_WEAPON, cg_weapons[es->weapon].reloadFastSound);
+			trap_S_StartSoundEx(NULL, es->number, CHAN_WEAPON, cg_weapons[es->weapon].reloadFastSound, SND_PAUSABLE);
 		}
 		else if (cg_weapons[es->weapon].reloadSound)
 		{
-			trap_S_StartSound(NULL, es->number, CHAN_WEAPON, cg_weapons[es->weapon].reloadSound);     // following sherman's SP fix, should allow killing reload sound when player dies
+			trap_S_StartSoundEx(NULL, es->number, CHAN_WEAPON, cg_weapons[es->weapon].reloadSound, SND_PAUSABLE);     // following sherman's SP fix, should allow killing reload sound when player dies
 		}
 		break;
 	case EV_MG42_FIXED:
@@ -2287,7 +2296,7 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 
 		if (es->number == cg.snap->ps.clientNum)
 		{
-			if ((cg_noAmmoAutoSwitch.integer > 0 && !CG_WeaponSelectable(cg.weaponSelect))
+			if ((cg_noAmmoAutoSwitch.integer > 0 && !CG_WeaponSelectable(cg.weaponSelect, qfalse))
 			    || (GetWeaponTableData(es->weapon)->firingMode & (WEAPON_FIRING_MODE_ONE_SHOT | WEAPON_FIRING_MODE_THROWABLE)))
 			{
 				CG_OutOfAmmoChange(event == EV_NOAMMO);
@@ -2459,7 +2468,7 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 		break;
 	case EV_BULLET:
 		CG_PlayHitSound(es->otherEntityNum, es->modelindex);
-		CG_Bullet(es->weapon, es->pos.trBase, es->otherEntityNum, es->modelindex, es->eventParm);
+		CG_Bullet(es->weapon, es->pos.trBase, es->otherEntityNum, es->otherEntityNum2);
 		break;
 	case EV_GENERAL_SOUND:
 	{
@@ -2935,6 +2944,27 @@ void CG_EntityEvent(centity_t *cent, vec3_t position)
 	case EV_PLAYER_HIT:
 		CG_PlayHitSound(es->clientNum, es->eventParm);
 		break;
+	case EV_PLAYER_REVIVE:
+	{
+		sfxHandle_t sound;
+		int         reviver = es->clientNum;
+		// int revivee = es->eventParm;
+		// int invulnEndTime = invulnEndTime;
+
+		if (reviver == cg.clientNum)
+		{
+			cg.lastReviveTime = cg.time;
+		}
+
+		// play sound
+		sound = CG_GetGameSound(GAMESOUND_MISC_REVIVE);
+
+		if (sound)
+		{
+			trap_S_StartSoundVControl(es->origin, es->number, CHAN_VOICE, sound, 255);
+		}
+	}
+	break;
 	default:
 		if (cg.demoPlayback)
 		{

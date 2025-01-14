@@ -67,6 +67,75 @@
 #endif
 
 #ifdef __ANDROID__
+#include <jni.h>
+qboolean call_copyIntoAPPDirectory(JNIEnv* env, jobject javaObject, const char* filename) {
+    // Find the class of the Java object
+    jclass javaClass = (*env)->GetObjectClass(env, javaObject);
+    if (!javaClass) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to find Java class.\n");
+        return qfalse;
+    }
+
+    // Get the method ID for the "copyIntoAPPDirectory" method
+    jmethodID methodID = (*env)->GetMethodID(env, javaClass, "copyIntoAPPDirectory", "(Ljava/lang/String;)Z");
+    if (!methodID) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to find method copyIntoAPPDirectory.\n");
+        return qfalse;
+    }
+
+    // Convert the C string filename to a Java string
+    jstring javaFilename = (*env)->NewStringUTF(env, filename);
+    if (!javaFilename) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create Java string.\n");
+        return qfalse;
+    }
+
+    // Call the Java method
+    jboolean result = (*env)->CallBooleanMethod(env, javaObject, methodID, javaFilename);
+
+    // Clean up local references
+    (*env)->DeleteLocalRef(env, javaFilename);
+
+    return result == JNI_TRUE;
+}
+
+qboolean invoke_copy_into_app_directory(const char* filename) {
+    JNIEnv *env = (JNIEnv *) SDL_AndroidGetJNIEnv();
+
+    // Find the Java class containing the copyIntoAPPDirectory method
+    jclass javaClass = (*env)->FindClass(env, "com/etlegacy/app/CopyToInternal"); // Replace with your actual Java class name
+    if (!javaClass) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to find Java class.\n");
+        return qfalse;
+    }
+
+    // Get the constructor for the Java class
+    jmethodID constructor = (*env)->GetMethodID(env, javaClass, "<init>", "(Landroid/content/Context;)V");
+    if (!constructor) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to find constructor.\n");
+        return qfalse;
+    }
+
+    // Get the application context (replace with a valid Context jobject)
+    jobject appContext = SDL_AndroidGetActivity(); // You need to pass a valid Android context object here
+
+    // Create an instance of the Java class
+    jobject javaObject = (*env)->NewObject(env, javaClass, constructor, appContext);
+    if (!javaObject) {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to create Java object.\n");
+        return qfalse;
+    }
+
+    // Call the copyIntoAPPDirectory method
+    qboolean result = call_copyIntoAPPDirectory(env, javaObject, filename);
+
+    // Clean up local references
+    (*env)->DeleteLocalRef(env, javaObject);
+    (*env)->DeleteLocalRef(env, javaClass);
+
+    return result;
+}
+
 // Android must exit out of the main call..
 #define MAIN_MUST_RETURN
 #endif
@@ -75,6 +144,8 @@
 #include <setjmp.h>
 jmp_buf exit_game;
 #endif
+
+char *GlobalGameTitle = CLIENT_WINDOW_TITLE;
 
 static char binaryPath[MAX_OSPATH]  = { 0 };
 static char installPath[MAX_OSPATH] = { 0 };
@@ -757,7 +828,22 @@ static void *Sys_TryLibraryLoad(const char *base, const char *gamedir, const cha
 #ifndef __ANDROID__
 	libHandle = Sys_LoadLibrary(fn);
 #else
-	libHandle = Sys_LoadLibrary(fname);
+    char fnhomepath[MAX_OSPATH] = { 0 };
+
+    Q_strncpyz(fnhomepath, Sys_CdToExtStorage(), sizeof(fnhomepath));
+    Q_strcat(fnhomepath, sizeof(fnhomepath), "/Documents/etlegacy/");
+    Q_strcat(fnhomepath, sizeof(fnhomepath), gamedir);
+    Q_strcat(fnhomepath, sizeof(fnhomepath), "/");
+    Q_strcat(fnhomepath, sizeof(fnhomepath), fname);
+
+    if (invoke_copy_into_app_directory(fnhomepath))
+    {
+        char path[MAX_OSPATH] = { 0 };
+        Q_strncpyz(path, SDL_AndroidGetInternalStoragePath(), sizeof(path));
+        Q_strcat(path, sizeof(path), "/");
+        Q_strcat(path, sizeof(path), fname);
+        libHandle = Sys_LoadLibrary(path);
+    }
 #endif
 
 	if (!libHandle)
@@ -913,17 +999,129 @@ void *Sys_LoadGameDll(const char *name, qboolean extract,
 	return libHandle;
 }
 
+void Sys_ParseArgsDrawBanner(FILE *stream)
+{
+	static int alreadyDrawn = qfalse;
+	if (!alreadyDrawn)
+	{
+		alreadyDrawn = qtrue;
+		fprintf(stream,
+		        "  ███████╗████████╗   ██╗     ███████╗ ██████╗  █████╗  ██████╗██╗   ██╗\n"
+		        "  ██╔════╝╚══██╔══╝██╗██║     ██╔════╝██╔════╝ ██╔══██╗██╔════╝╚██╗ ██╔╝\n"
+		        "  █████╗     ██║   ╚═╝██║     █████╗  ██║  ███╗███████║██║      ╚████╔╝\n"
+		        "  ██╔══╝     ██║   ██╗██║     ██╔══╝  ██║   ██║██╔══██║██║       ╚██╔╝\n"
+		        "  ███████╗   ██║   ╚═╝███████╗███████╗╚██████╔╝██║  ██║╚██████╗   ██║\n"
+		        "  ╚══════╝   ╚═╝      ╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝   ╚═╝\n"
+#ifdef DEDICATED
+		        "    Dedicated Server\n"
+#endif
+		        "    Version: %s\n"
+		        "\n",
+		        PRODUCT_VERSION_STR
+		        );
+	}
+}
+
+void Sys_ParseArgsShowHelpAndExit(int ret)
+{
+	FILE *stream = (ret == 0) ? stdout : stderr;
+	Sys_ParseArgsDrawBanner(stream);
+	fprintf(stream,
+	        "Usage:\n"
+#ifndef DEDICATED
+	        "  <etl-bin> [option]* [--] [launch options]*\n"
+#else
+	        "  <etlded-bin> [option]* [--] [launch options]*\n"
+#endif
+	        "\n"
+	        "Options:\n"
+	        "  -h, --help                 Show help and exit\n"
+	        "  -v, --version              Show version and exit\n"
+#ifndef DEDICATED
+	        "  -t, --title <title>        Set the game window title\n"
+#endif
+	        "\n"
+	        "Launch Options:\n"
+	        "  see https://etlegacy.readthedocs.io/en/latest/commands.html\n"
+	        "  and https://etlegacy.readthedocs.io/en/latest/cvars.html\n"
+	        "\n"
+	        "Examples:\n"
+#ifndef DEDICATED
+	        "  <etl-bin> +connect 127.0.0.1:27960 +exec my_localhost_server_config.cfg\n"
+	        "  <etl-bin> +devmap radar\n"
+	        "  <etl-bin> --title ETLOther -- +set fs_homepath my_other_homepath +sv_pure 0\n"
+#else
+	        "  <etlded-bin> +dedicated 1 +sv_hostname 'WolfLANServer' +map radar\n"
+	        "  <etlded-bin> +dedicated 2 +sv_hostname 'WolfInternetServer' +set net_port 27960 +map radar\n"
+	        "  <etlded-bin> +exec my_server_config.cfg\n"
+#endif
+	        "\n"
+	        );
+	Sys_Exit(ret);
+}
+
+void Sys_ParseArgsError(const char *msg)
+{
+	Sys_ParseArgsDrawBanner(stderr);
+	if (msg != NULL)
+	{
+		fprintf(stderr, "  ERROR: %s\n", msg);
+	}
+	Sys_ParseArgsShowHelpAndExit(1);
+}
+
 /**
- * @brief Sys_ParseArgs
+ * @brief Consumes a ParseArgs sub-arg.
+ * @return 'qtrue' in case of an error
+ */
+int Sys_ParseArgsConsumeSubarg(int argc, char **argv, int *i, char **dest)
+{
+	(*i)++;
+
+	if ((*i) >= argc || argv[*i][0] == '\0' || !Q_stricmp(argv[*i], "--\0"))
+	{
+		return qtrue;
+	}
+	// spit out any arg that starts with "+" - as that is likely a mistake
+	else if (argv[*i][0] == '+')
+	{
+		fprintf(stderr, "ERROR: Rejecting sub arg: '%s' as it starts via '+', which likely is a mistake - if you disagree escape the first character via '\\+'\n", argv[*i]);
+		return qtrue;
+	}
+	// we support consuming args that want to start with '+' as long as it's escaped via '\+' tho
+	else if (argv[*i][0] == '\\' && argv[*i][1] == '+')
+	{
+		Q_strncpyz(&argv[*i][0], &argv[*i][1], strlen(argv[*i]));
+	}
+
+	*dest    = argv[*i];
+	argv[*i] = NULL;
+
+	return qfalse;
+}
+
+/**
+ * @brief Parses passed process arguments
  * @param[in] argc
- * @param[in] argv
+ * @param[in,out] argv
  */
 void Sys_ParseArgs(int argc, char **argv)
 {
-	if (argc == 2)
+	for (int i = 0; i < argc; ++i)
 	{
-		if (!strcmp(argv[1], "--version") ||
-		    !strcmp(argv[1], "-v"))
+		if (!Q_stricmp(argv[i], "--"))
+		{
+			return;
+		}
+		// --help -- print help info
+		else if (!Q_stricmp(argv[i], "--help") ||
+		         !Q_stricmp(argv[i], "-h"))
+		{
+			Sys_ParseArgsShowHelpAndExit(0);
+		}
+		// --version -- prints version info and quits
+		else if (!Q_stricmp(argv[i], "--version") ||
+		         !Q_stricmp(argv[i], "-v"))
 		{
 #ifdef DEDICATED
 			fprintf(stdout, Q3_VERSION " " CPUSTRING " dedicated server (%s)\n", __DATE__);
@@ -934,6 +1132,23 @@ void Sys_ParseArgs(int argc, char **argv)
 			fprintf(stdout, "Built: " PRODUCT_BUILD_TIME "\n");
 			fprintf(stdout, "Build features: " PRODUCT_BUILD_FEATURES "\n");
 			Sys_Exit(0);
+		}
+#ifndef DEDICATED
+		// --title -- allows to set a custom window title
+		else if (!Q_stricmp(argv[i], "--title") ||
+		         !Q_stricmp(argv[i], "-t"))
+		{
+			if (Sys_ParseArgsConsumeSubarg(argc, argv, &i, &GlobalGameTitle))
+			{
+				Sys_ParseArgsError(va("Option '%s' expected an argument: <title>\n", argv[i - 1]));
+			}
+			argv[i - 1] = NULL;
+		}
+#endif
+		// let's try to catch some errors
+		else if (!strncmp(argv[i], "--", 2))
+		{
+			Sys_ParseArgsError(va("Unknown arg: '%s'\n\n", argv[i]));
 		}
 	}
 }
@@ -951,33 +1166,41 @@ void Sys_BuildCommandLine(int argc, char **argv, char *buffer, size_t bufferSize
 	// Concatenate the command line for passing to Com_Init
 	for (i = 1; i < argc; i++)
 	{
-		const qboolean containsSpaces = (qboolean)(strchr(argv[i], ' ') != NULL);
-
-		// Allow URIs to be passed without +connect
-		if (!Q_stricmpn(argv[i], "et://", 5) && Q_stricmpn(argv[i - 1], "+connect", 8))
+		// 'Sys_ParseArgs' sets arguments it consumes to 'NULL', simply skip them
+		if (argv[i] == NULL)
 		{
-			Q_strcat(buffer, bufferSize, "+connect ");
+			continue;
 		}
 
-		// Allow demo files to be passed without +demo for playback
-		if (FS_IsDemoExt(argv[i], -1) && Q_stricmpn(argv[i - 1], "+demo", 5) && Q_stricmpn(argv[i - 1], "+record", 7))
 		{
-			Q_strcat(buffer, bufferSize, "+demo dirty ");
+			const qboolean containsSpaces = (qboolean)(strchr(argv[i], ' ') != NULL);
+
+			// Allow URIs to be passed without +connect
+			if (!Q_stricmpn(argv[i], "et://", 5) && Q_stricmpn(argv[i - 1], "+connect", 8))
+			{
+				Q_strcat(buffer, bufferSize, "+connect ");
+			}
+
+			// Allow demo files to be passed without +demo for playback
+			if (FS_IsDemoExt(argv[i], -1) && Q_stricmpn(argv[i - 1], "+demo", 5) && Q_stricmpn(argv[i - 1], "+record", 7))
+			{
+				Q_strcat(buffer, bufferSize, "+demo dirty ");
+			}
+
+			if (containsSpaces)
+			{
+				Q_strcat(buffer, bufferSize, "\"");
+			}
+
+			Q_strcat(buffer, bufferSize, argv[i]);
+
+			if (containsSpaces)
+			{
+				Q_strcat(buffer, bufferSize, "\"");
+			}
+
+			Q_strcat(buffer, bufferSize, " ");
 		}
-
-		if (containsSpaces)
-		{
-			Q_strcat(buffer, bufferSize, "\"");
-		}
-
-		Q_strcat(buffer, bufferSize, argv[i]);
-
-		if (containsSpaces)
-		{
-			Q_strcat(buffer, bufferSize, "\"");
-		}
-
-		Q_strcat(buffer, bufferSize, " ");
 	}
 }
 
@@ -1010,6 +1233,15 @@ void Sys_SigHandler(int signal)
 	if (signal == SIGTERM || signal == SIGINT)
 	{
 		Sys_Exit(1);
+	}
+	else if (signal == SIGSEGV)
+	{
+#if defined(__linux__) && defined(__ANDROID_API__) >= 33
+		Sys_Backtrace(signal);
+		// NOTE : must not exit here, otherwise OS might not create coredumps
+#else
+		Sys_Exit(signal);
+#endif
 	}
 	else
 	{
@@ -1129,6 +1361,8 @@ int main(int argc, char **argv)
 	}
 #endif
 
+	// TODO : check if we shouldn't just decide to skip this call when we build
+	// the Android target
 	Sys_ParseArgs(argc, argv);
 
 #if defined(__APPLE__) && !defined(DEDICATED)
@@ -1176,11 +1410,17 @@ int main(int argc, char **argv)
 		CFRelease(url);
 		CFRelease(url2);
 	}
+#elif __ANDROID__
+    Sys_SetBinaryPath(Sys_Dirname(Cmd_Argv(1)));
 #else
-	Sys_SetBinaryPath(Sys_Dirname(argv[0]));
+    Sys_SetBinaryPath(Sys_Dirname(argv[0]));
 #endif
 
-	Sys_SetDefaultInstallPath(DEFAULT_BASEDIR); // Sys_BinaryPath() by default
+#ifndef __ANDROID__
+    Sys_SetDefaultInstallPath(DEFAULT_BASEDIR); // Sys_BinaryPath() by default
+#else
+    Sys_SetDefaultInstallPath(Cmd_Argv(1)); // Sys_BinaryPath() by default
+#endif
 
 	// Concatenate the command line for passing to Com_Init
 	Sys_BuildCommandLine(argc, argv, commandLine, sizeof(commandLine));

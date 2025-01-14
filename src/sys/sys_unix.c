@@ -41,6 +41,7 @@
 #include "../qcommon/qcommon.h"
 #include "sys_local.h"
 
+#include <execinfo.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -56,6 +57,9 @@
 #include <sys/wait.h>
 #ifdef  __ANDROID__
 #include <jni.h>
+#if defined(__ANDROID_API__) >= 33
+#include <execinfo.h>
+#endif
 #endif
 
 qboolean stdinIsATTY;
@@ -64,7 +68,7 @@ qboolean stdinIsATTY;
 static char homePath[MAX_OSPATH] = { 0 };
 
 #ifdef  __ANDROID__
-static char *Sys_CdToExtStorage(void)
+char *Sys_CdToExtStorage(void)
 {
     JNIEnv *env = (JNIEnv *) SDL_AndroidGetJNIEnv();
     jthrowable exception;
@@ -460,7 +464,7 @@ qboolean Sys_Mkdir(const char *path)
 char *Sys_Cwd(void)
 {
 	static char cwd[MAX_OSPATH];
-
+#ifndef __ANDROID__
 	char *result = getcwd(cwd, sizeof(cwd) - 1);
 	if (result != cwd)
 	{
@@ -468,8 +472,11 @@ char *Sys_Cwd(void)
 	}
 
 	cwd[MAX_OSPATH - 1] = 0;
-
-	return cwd;
+#else
+    Q_strncpyz(cwd, SDL_AndroidGetExternalStoragePath(), sizeof(cwd));
+    Q_strcat(cwd, sizeof(homePath), "/etlegacy");
+#endif
+    return cwd;
 }
 
 /*
@@ -1282,4 +1289,27 @@ qboolean Sys_DllExtension(const char *name)
 	}
 
 	return qfalse;
+}
+
+void Sys_Backtrace(int sig)
+{
+	void   *syms[32];
+	size_t size;
+
+	// Get the backtrace and write it to stderr
+#if defined(__ANDROID_API__) >= 33
+	size = backtrace(syms, 32);
+#endif
+	fprintf(stderr, "--- Report this to the project - START ---\n");
+	fprintf(stderr, "ERROR: Caught SIGSEGV(%d)\n", sig);
+	fprintf(stderr, "VERSION: %s (%s)\n", ETLEGACY_VERSION, ETLEGACY_VERSION_SHORT);
+	fprintf(stderr, "BTIME: %s\n", PRODUCT_BUILD_TIME);
+	fprintf(stderr, "BACKTRACE:\n");
+#if defined(__ANDROID_API__) >= 33
+	backtrace_symbols_fd(syms, size, STDERR_FILENO);
+#endif
+	fprintf(stderr, "--- Report this to the project -  END  ---\n");
+
+	signal(sig, SIG_DFL);
+	kill(getpid(), sig);
 }

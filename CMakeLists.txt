@@ -71,7 +71,7 @@ option(FEATURE_EDV				"Enable extended demo viewer support (mod)"				ON)
 option(FEATURE_ANTICHEAT		"Enable server side anti-wallhack code (server)"		ON)
 option(FEATURE_AUTOUPDATE		"Enable updater which downloads latest ET:L files"		ON)
 option(FEATURE_RENDERER1		"Build and use the vanilla renderer (OpenGL 1/2)"		ON)
-option(FEATURE_RENDERER2		"Build and use the borked renderer (OpenGL 3)"			OFF)
+option(FEATURE_RENDERER2		"Build and use the extended renderer (OpenGL 3)"		OFF)
 option(FEATURE_RENDERER_GLES	"Build and use OpenGL ES renderer"						OFF)
 option(FEATURE_RENDERER_VULKAN	"Build and use Vulkan renderer"							OFF)
 option(FEATURE_IPV6				"Enable IPv6 networking code"							ON)
@@ -148,7 +148,7 @@ set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER ${CMAKE_TARGETS_FOLDER})
 
 # Set language levels
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 99)  # engine is intentionally C99 while mods remain C90
 
 # Find and setup programs the build needs
 include(cmake/ETLPrograms.cmake)
